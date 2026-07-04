@@ -58,7 +58,7 @@ From `aohp`, enter `AOSP/` and choose one manifest source.
 ```bash
 cd AOSP
 
-repo init -b android-latest-release
+repo init -b android16-qpr2-release
 
 cd .repo
 git clone git@github.com:aohp-os/local_manifests.git
@@ -74,7 +74,7 @@ Most repos use the Tsinghua mirror; a small set of AOHP-specific repos still com
 ```bash
 cd AOSP
 
-repo init -b android-latest-release \
+repo init -b android16-qpr2-release \
   -u https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/manifest
 
 cd .repo

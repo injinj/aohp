@@ -173,8 +173,8 @@ AOHP 基于 AOSP 构建。本仓库托管项目文档与统一的开发框架。
 git clone git@github.com:aohp-os/aohp.git
 cd aohp
 
-# 2. 初始化 AOSP + AOHP manifest（镜像/代理选项见开发指南）
-cd AOSP && repo init -b android-latest-release
+# 2. 初始化 AOSP + AOHP manifest（Android 16 QPR2；镜像/代理选项见开发指南）
+cd AOSP && repo init -b android16-qpr2-release
 cd .repo && git clone git@github.com:aohp-os/local_manifests.git && cd ..
 repo sync -j4
 

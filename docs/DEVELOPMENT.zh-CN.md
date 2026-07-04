@@ -59,8 +59,8 @@ cd aohp
 ```bash
 cd AOSP
 
-# 初始化 manifest（会从 Google 源 clone）
-repo init -b android-latest-release
+# 初始化 manifest（Android 16 QPR2，会从 Google 源 clone）
+repo init -b android16-qpr2-release
 
 # 加载 AOHP 的 local_manifests
 cd .repo
@@ -78,7 +78,7 @@ repo sync -j4
 ```bash
 cd AOSP
 
-repo init -b android-latest-release \
+repo init -b android16-qpr2-release \
   -u https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/manifest
 
 cd .repo

@@ -172,8 +172,8 @@ Source trees live in the `aohp-os` GitHub organization and are pulled in via [lo
 git clone git@github.com:aohp-os/aohp.git
 cd aohp
 
-# 2. Initialize AOSP + AOHP manifests (see guide for mirror/proxy options)
-cd AOSP && repo init -b android-latest-release
+# 2. Initialize AOSP + AOHP manifests (Android 16 QPR2; see guide for mirror/proxy options)
+cd AOSP && repo init -b android16-qpr2-release
 cd .repo && git clone git@github.com:aohp-os/local_manifests.git && cd ..
 repo sync -j4
 
