@@ -112,7 +112,7 @@ AOHP provides personalized services by orchestrating APIs, CLIs, GUIs, memory, s
 <tr>
 <td align="center"><a href="./demos/agent/gallery_brightness.mp4"><img src="./demos/agent/gallery_brightness.gif" alt="Gallery brightness demo" width="250"/></a></td>
 <td align="center"><a href="./demos/agent/cloud_file_markor.mp4"><img src="./demos/agent/cloud_file_markor.gif" alt="Cloud file Markor demo" width="250"/></a></td>
-<td align="center"><a href="./demos/agent/taskdriver_calendar.mp4"><img src="./demos/agent/taskdriver_calendar.gif" alt="TaskDriver calendar demo" width="250"/></a></td>
+<td align="center"><a href="./demos/agent/event_capture.mp4"><img src="./demos/agent/event_capture.gif" alt="Event Capture demo" width="250"/></a></td>
 </tr>
 </table>
 

@@ -112,7 +112,7 @@ AOHP 借助 AI 智能体编排 API、CLI、GUI、记忆、技能等能力，提�
 <tr>
 <td align="center"><a href="../demos/agent/gallery_brightness.mp4"><img src="../demos/agent/gallery_brightness.gif" alt="UI 微操作演示" width="250"/></a></td>
 <td align="center"><a href="../demos/agent/cloud_file_markor.mp4"><img src="../demos/agent/cloud_file_markor.gif" alt="文件处理演示" width="250"/></a></td>
-<td align="center"><a href="../demos/agent/taskdriver_calendar.mp4"><img src="../demos/agent/taskdriver_calendar.gif" alt="事件捕获演示" width="250"/></a></td>
+<td align="center"><a href="../demos/agent/event_capture.mp4"><img src="../demos/agent/event_capture.gif" alt="事件捕获演示" width="250"/></a></td>
 </tr>
 </table>
 
