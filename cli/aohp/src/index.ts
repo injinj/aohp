@@ -2190,6 +2190,59 @@ overlayCmd
 
 program.configureHelp({ sortSubcommands: true });
 
+// ---- secrets (RPC methods secret.*) — Android Keystore-backed store in the AgentDriver app ----
+const secret = program
+  .command("secret")
+  .description("Named secrets kept in the phone keystore by the Agent app (RPC methods secret.*)");
+
+secret
+  .command("get")
+  .description("Print a secret's value → secret.get (exit 2 if missing)")
+  .argument("<name>", "secret name, e.g. ANTHROPIC_API_KEY")
+  .action(async (name: string) => {
+    const o = program.opts<{ url: string }>();
+    const res = await rpc(o.url, "secret.get", { name });
+    const r = res.result as { value?: string; code?: string; message?: string } | undefined;
+    if (!res.ok || !r || typeof r.value !== "string") {
+      console.error(JSON.stringify(res.error ?? r ?? res));
+      process.exit(2);
+    }
+    process.stdout.write(r.value + "\n");
+  });
+
+secret
+  .command("set")
+  .description("Store a secret → secret.set (value from argument, else read from stdin)")
+  .argument("<name>", "secret name ([A-Z][A-Z0-9_]*)")
+  .argument("[value]", "secret value; omit to read it from stdin (recommended)")
+  .action(async (name: string, value: string | undefined) => {
+    const o = program.opts<{ url: string; pretty?: boolean }>();
+    let v = value;
+    if (v === undefined) {
+      v = fs.readFileSync(0, "utf8");
+      if (v.endsWith("\n")) v = v.slice(0, -1);
+    }
+    if (!v) failCli("empty value");
+    await invoke(o.url, "secret.set", { name, value: v }, !!o.pretty);
+  });
+
+secret
+  .command("delete")
+  .description("Delete a secret → secret.delete")
+  .argument("<name>", "secret name")
+  .action(async (name: string) => {
+    const o = program.opts<{ url: string; pretty?: boolean }>();
+    await invoke(o.url, "secret.delete", { name }, !!o.pretty);
+  });
+
+secret
+  .command("list")
+  .description("List secret names (never values) → secret.list")
+  .action(async () => {
+    const o = program.opts<{ url: string; pretty?: boolean }>();
+    await invoke(o.url, "secret.list", {}, !!o.pretty);
+  });
+
 program.parseAsync(process.argv).catch((e) => {
   console.error(e);
   process.exit(1);

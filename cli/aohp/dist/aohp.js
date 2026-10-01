@@ -8022,6 +8022,35 @@ overlayCmd.command("tap-hide").description("Hide tap highlight immediately \u219
   await invoke(o.url, "overlay.tap.hide", {}, !!o.pretty);
 });
 program2.configureHelp({ sortSubcommands: true });
+var secret = program2.command("secret").description("Named secrets kept in the phone keystore by the Agent app (RPC methods secret.*)");
+secret.command("get").description("Print a secret's value \u2192 secret.get (exit 2 if missing)").argument("<name>", "secret name, e.g. ANTHROPIC_API_KEY").action(async (name) => {
+  const o = program2.opts();
+  const res = await rpc(o.url, "secret.get", { name });
+  const r = res.result;
+  if (!res.ok || !r || typeof r.value !== "string") {
+    console.error(JSON.stringify(res.error ?? r ?? res));
+    process.exit(2);
+  }
+  process.stdout.write(r.value + "\n");
+});
+secret.command("set").description("Store a secret \u2192 secret.set (value from argument, else read from stdin)").argument("<name>", "secret name ([A-Z][A-Z0-9_]*)").argument("[value]", "secret value; omit to read it from stdin (recommended)").action(async (name, value) => {
+  const o = program2.opts();
+  let v = value;
+  if (v === void 0) {
+    v = fs.readFileSync(0, "utf8");
+    if (v.endsWith("\n")) v = v.slice(0, -1);
+  }
+  if (!v) failCli("empty value");
+  await invoke(o.url, "secret.set", { name, value: v }, !!o.pretty);
+});
+secret.command("delete").description("Delete a secret \u2192 secret.delete").argument("<name>", "secret name").action(async (name) => {
+  const o = program2.opts();
+  await invoke(o.url, "secret.delete", { name }, !!o.pretty);
+});
+secret.command("list").description("List secret names (never values) \u2192 secret.list").action(async () => {
+  const o = program2.opts();
+  await invoke(o.url, "secret.list", {}, !!o.pretty);
+});
 program2.parseAsync(process.argv).catch((e) => {
   console.error(e);
   process.exit(1);
