@@ -2190,6 +2190,248 @@ overlayCmd
 
 program.configureHelp({ sortSubcommands: true });
 
+// ---- units (RPC method sandbox.unit) — systemd-subset units supervised by aohp-containerd ----
+// Human-readable (systemctl-like) output by default; --json prints the daemon's JSON. The
+// container-side /usr/local/bin/systemctl shim is a thin wrapper over these commands.
+
+type UnitJson = {
+  name: string; type: string; serviceType: string; description: string; loadState: string; loadError: string;
+  loadWarnings: string[]; path: string; enabled: boolean; active: string; sub: string; result: string;
+  mainPid: number; exitCode: number; exitSignal: number; exitSignalName: string; nRestarts: number;
+  activeEnterTime: number; inactiveEnterTime: number; uptimeSec: number; execStart: string; restart: string;
+  restartSec: number; restartInSec: number; remainAfterExit: boolean; workingDirectory: string;
+  after: string[]; before: string[]; requires: string[]; wants: string[]; conditionPathExists: string[];
+  timer?: { unit: string; nextElapse: number; lastTrigger: number; onBootSec: number; onUnitActiveSec: number; onCalendar: string; persistent: boolean };
+  log?: string;
+};
+
+async function unitRpc(url: string, env: string, op: string, args: Record<string, unknown> = {}) {
+  const res = await rpc(url, "sandbox.unit", { name: env, op, ...args });
+  if (!res.ok) {
+    const e = res.error ?? res;
+    const msg = typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : JSON.stringify(e);
+    console.error("Failed: " + msg);
+    process.exit(/not available|unknown_method/.test(msg) ? 3 : 2);
+  }
+  return res.result as Record<string, unknown>;
+}
+
+function fmtDur(sec: number): string {
+  sec = Math.max(0, Math.floor(sec));
+  if (sec < 60) return sec + "s";
+  if (sec < 3600) return Math.floor(sec / 60) + "min " + (sec % 60) + "s";
+  if (sec < 86400) return Math.floor(sec / 3600) + "h " + Math.floor((sec % 3600) / 60) + "min";
+  return Math.floor(sec / 86400) + "d " + Math.floor((sec % 86400) / 3600) + "h";
+}
+function fmtEpoch(t: number): string {
+  if (!t) return "n/a";
+  const d = new Date(t * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+}
+function unitStateLine(u: UnitJson, now: number): string {
+  let s = u.active + " (" + u.sub + ")";
+  if (u.active === "active" && u.activeEnterTime) s += " since " + fmtEpoch(u.activeEnterTime) + "; " + fmtDur(now - u.activeEnterTime) + " ago";
+  else if (u.inactiveEnterTime && (u.active === "inactive" || u.active === "failed")) s += " since " + fmtEpoch(u.inactiveEnterTime) + "; " + fmtDur(now - u.inactiveEnterTime) + " ago";
+  if (u.result && u.result !== "success") s += " (Result: " + u.result + ")";
+  return s;
+}
+function printUnitList(units: UnitJson[], warnings: string[] = []) {
+  const rows = units.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "service" ? -1 : 1));
+  const w = Math.max(4, ...rows.map((u) => u.name.length));
+  console.log("UNIT".padEnd(w) + "  LOAD      ACTIVE        SUB            DESCRIPTION");
+  for (const u of rows) {
+    const load = u.loadState === "error" ? "error" : u.loadState;
+    const desc = u.loadState === "error" ? u.loadError : u.description || (u.loadState === "transient" ? u.execStart : "");
+    console.log(u.name.padEnd(w) + "  " + load.padEnd(9) + " " + u.active.padEnd(13) + " " + u.sub.padEnd(14) + " " + desc);
+  }
+  console.log("\n" + rows.length + " units listed. (loaded = unit file read; transient = started with svc-start; enabled units: " + rows.filter((u) => u.enabled).length + ")");
+  for (const wmsg of warnings) console.log("warning: " + wmsg);
+}
+function printTimerList(timers: UnitJson[]) {
+  const now = Date.now() / 1000;
+  const w = Math.max(4, ...timers.map((u) => u.name.length));
+  console.log("NEXT                 LEFT       LAST                 PASSED     " + "UNIT".padEnd(w) + "  ACTIVATES");
+  for (const u of timers.sort((a, b) => a.name.localeCompare(b.name))) {
+    const t = u.timer!;
+    const next = t.nextElapse ? fmtEpoch(t.nextElapse) : (u.active === "active" ? "n/a (elapsed)" : "n/a");
+    const left = t.nextElapse ? fmtDur(t.nextElapse - now) + " left" : "-";
+    const last = t.lastTrigger ? fmtEpoch(t.lastTrigger) : "n/a";
+    const passed = t.lastTrigger ? fmtDur(now - t.lastTrigger) + " ago" : "-";
+    console.log(next.padEnd(20) + " " + left.padEnd(10) + " " + last.padEnd(20) + " " + passed.padEnd(10) + " " + u.name.padEnd(w) + "  " + t.unit + (u.active !== "active" ? "  [" + u.active + "]" : ""));
+  }
+  console.log("\n" + timers.length + " timers listed.");
+}
+function printUnitStatus(u: UnitJson, showLog: boolean) {
+  const now = Date.now() / 1000;
+  const dot = u.active === "active" ? "●" : u.active === "failed" ? "×" : "○";
+  console.log(dot + " " + u.name + (u.description ? " - " + u.description : ""));
+  const loaded = u.loadState === "error" ? "error (" + u.loadError + ")" : u.loadState === "transient" ? "loaded (transient)" : "loaded (" + u.path + "; " + (u.enabled ? "enabled" : "disabled") + ")";
+  console.log("     Loaded: " + loaded);
+  console.log("     Active: " + unitStateLine(u, now));
+  if (u.type === "timer" && u.timer) {
+    console.log("    Trigger: " + (u.timer.nextElapse ? fmtEpoch(u.timer.nextElapse) + "; " + fmtDur(u.timer.nextElapse - now) + " left" : "n/a"));
+    console.log("   Triggers: ● " + u.timer.unit);
+    if (u.timer.lastTrigger) console.log("       Last: " + fmtEpoch(u.timer.lastTrigger) + "; " + fmtDur(now - u.timer.lastTrigger) + " ago");
+    const spec = [u.timer.onBootSec >= 0 ? "OnBootSec=" + u.timer.onBootSec : "", u.timer.onUnitActiveSec >= 0 ? "OnUnitActiveSec=" + u.timer.onUnitActiveSec : "", u.timer.onCalendar ? "OnCalendar=" + u.timer.onCalendar : "", u.timer.persistent ? "Persistent=yes" : ""].filter(Boolean).join(" ");
+    console.log("   Schedule: " + spec);
+  } else {
+    if (u.mainPid > 0) console.log("   Main PID: " + u.mainPid + " (sh -c)");
+    else if (u.exitCode >= 0 || u.exitSignal > 0) console.log("    Process: ExecStart=" + u.execStart + " (code=" + (u.exitSignal > 0 ? "killed, signal=" + u.exitSignalName : "exited, status=" + u.exitCode) + ")");
+    if (u.sub === "auto-restart") console.log("    Restart: in " + Math.ceil(u.restartInSec) + "s (Restart=" + u.restart + ", RestartSec=" + u.restartSec + ")");
+    else console.log("    Restart: " + u.restart + (u.restart !== "no" ? " (RestartSec=" + u.restartSec + ")" : "") + (u.nRestarts ? "; " + u.nRestarts + " restart(s)" : ""));
+    if (u.execStart) console.log("  ExecStart: " + u.execStart + (u.serviceType === "oneshot" ? "  [oneshot" + (u.remainAfterExit ? ", RemainAfterExit" : "") + "]" : ""));
+    const deps = [u.after.length ? "After=" + u.after.join(" ") : "", u.requires.length ? "Requires=" + u.requires.join(" ") : "", u.wants.length ? "Wants=" + u.wants.join(" ") : "", u.conditionPathExists.length ? "ConditionPathExists=" + u.conditionPathExists.join(" ") : ""].filter(Boolean).join("; ");
+    if (deps) console.log("       Deps: " + deps);
+  }
+  for (const w of u.loadWarnings || []) console.log("    Warning: " + w);
+  if (showLog && u.log) {
+    console.log("");
+    for (const l of u.log.replace(/\n$/, "").split("\n").slice(-12)) console.log("  " + l);
+  }
+}
+
+const unitCmd = program
+  .command("unit")
+  .description("systemd-style units supervised by aohp-containerd inside a sandbox (RPC method sandbox.unit; see docs/UNITS.md)");
+
+unitCmd
+  .command("list")
+  .argument("<env>", "sandbox name")
+  .option("--json", "print the daemon's JSON")
+  .option("-a, --all", "(accepted for systemctl compatibility; everything is always listed)")
+  .description("List units (services and timers) → sandbox.unit list")
+  .action(async (env: string, o: { json?: boolean }) => {
+    const r = await unitRpc(program.opts().url, env, "list");
+    if (o.json) return console.log(JSON.stringify(r, null, program.opts().pretty ? 2 : undefined));
+    printUnitList((r.units as UnitJson[]) ?? [], (r.warnings as string[]) ?? []);
+  });
+
+unitCmd
+  .command("status")
+  .argument("<env>", "sandbox name")
+  .argument("<unit>", "unit name (foo, foo.service, foo.timer)")
+  .option("--json", "print the daemon's JSON")
+  .option("--no-log", "do not print the log tail")
+  .description("Show one unit like systemctl status → sandbox.unit status (exit 3 when not active)")
+  .action(async (env: string, unit: string, o: { json?: boolean; log: boolean }) => {
+    const u = (await unitRpc(program.opts().url, env, "status", { unit })) as unknown as UnitJson;
+    if (o.json) console.log(JSON.stringify(u, null, program.opts().pretty ? 2 : undefined));
+    else printUnitStatus(u, o.log);
+    if (u.active !== "active" && u.active !== "activating") process.exit(3);
+  });
+
+unitCmd
+  .command("is-active")
+  .argument("<env>", "sandbox name")
+  .argument("<unit>", "unit name")
+  .description("Print the active state; exit 0 iff active")
+  .action(async (env: string, unit: string) => {
+    const u = (await unitRpc(program.opts().url, env, "is-active", { unit })) as unknown as UnitJson;
+    console.log(u.active);
+    if (u.active !== "active") process.exit(3);
+  });
+
+for (const op of ["start", "stop", "restart", "reload"] as const) {
+  unitCmd
+    .command(op)
+    .argument("<env>", "sandbox name")
+    .argument("<unit>", "unit name")
+    .option("--json", "print the daemon's JSON")
+    .description(op[0].toUpperCase() + op.slice(1) + " a unit (pulls in Requires=/Wants=, honours After=) → sandbox.unit " + op)
+    .action(async (env: string, unit: string, o: { json?: boolean }) => {
+      const u = (await unitRpc(program.opts().url, env, op, { unit })) as unknown as UnitJson;
+      if (o.json) return console.log(JSON.stringify(u, null, program.opts().pretty ? 2 : undefined));
+      console.log(u.name + ": " + unitStateLine(u, Date.now() / 1000));
+      if (op !== "stop" && u.active !== "active" && u.active !== "activating" && !(u.serviceType === "oneshot" && u.result === "success")) process.exit(1);
+    });
+}
+
+for (const op of ["enable", "disable"] as const) {
+  unitCmd
+    .command(op)
+    .argument("<env>", "sandbox name")
+    .argument("<unit>", "unit name")
+    .option("--now", op === "enable" ? "also start it" : "also stop it")
+    .option("--json", "print the daemon's JSON")
+    .description((op === "enable" ? "Enable (symlink into /etc/aohp/system/aohp.target.wants)" : "Disable (remove the symlink)") + " → sandbox.unit " + op)
+    .action(async (env: string, unit: string, o: { now?: boolean; json?: boolean }) => {
+      const u = (await unitRpc(program.opts().url, env, op, { unit, now: !!o.now })) as unknown as UnitJson;
+      if (o.json) return console.log(JSON.stringify(u, null, program.opts().pretty ? 2 : undefined));
+      console.log((op === "enable" ? "Created symlink " : "Removed ") + "/etc/aohp/system/aohp.target.wants/" + u.name + (op === "enable" ? " → ../" + u.name : "") + (o.now ? "; " + unitStateLine(u, Date.now() / 1000) : ""));
+    });
+}
+
+for (const op of ["daemon-reload", "env-start", "env-stop"] as const) {
+  unitCmd
+    .command(op)
+    .argument("<env>", "sandbox name")
+    .option("--json", "print the daemon's JSON")
+    .description(op === "daemon-reload" ? "Re-read /etc/aohp/system (running units keep their state) → sandbox.unit daemon-reload"
+      : op === "env-start" ? "Start every enabled unit of the env in dependency order (what Autostart does at boot)" : "Stop every active unit of the env in reverse order")
+    .action(async (env: string, o: { json?: boolean }) => {
+      const r = await unitRpc(program.opts().url, env, op);
+      if (o.json) return console.log(JSON.stringify(r, null, program.opts().pretty ? 2 : undefined));
+      const arr = (k: string) => (r[k] as string[] | undefined) ?? [];
+      if (op === "env-start") console.log("started: " + (arr("started").join(" ") || "(none)") + (arr("failed").length ? "\nfailed: " + arr("failed").join(" ") : "") + (r.error ? "\nerror: " + r.error : ""));
+      else if (op === "env-stop") console.log("stopped: " + (arr("stopped").join(" ") || "(none)") + (arr("failed").length ? "\nfailed: " + arr("failed").join(" ") : ""));
+      else { console.log(((r.units as UnitJson[]) ?? []).length + " units loaded"); for (const w of arr("warnings")) console.log("warning: " + w); }
+    });
+}
+
+unitCmd
+  .command("reset-failed")
+  .argument("<env>", "sandbox name")
+  .argument("[unit]", "unit name (default: all)")
+  .description("Clear failed state and start-limit counters → sandbox.unit reset-failed")
+  .action(async (env: string, unit?: string) => {
+    await unitRpc(program.opts().url, env, "reset-failed", unit ? { unit } : {});
+    console.log("ok");
+  });
+
+unitCmd
+  .command("log")
+  .argument("<env>", "sandbox name")
+  .argument("<unit>", "unit name")
+  .option("-n, --lines <n>", "last N lines (default 50; 'all' = up to 1 MB)", "50")
+  .option("--bytes <n>", "tail bytes instead of lines")
+  .option("--json", "print the daemon's JSON {unit,size,log}")
+  .description("Print the unit's log tail (/data/aohp/envs/<env>/.aohp/log/<unit>.log) → sandbox.unit log")
+  .action(async (env: string, unit: string, o: { lines: string; bytes?: string; json?: boolean }) => {
+    const tailBytes = o.bytes ? parseInt(o.bytes, 10) : o.lines === "all" ? 1024 * 1024 : Math.min(1024 * 1024, Math.max(4096, parseInt(o.lines, 10) * 400));
+    const r = await unitRpc(program.opts().url, env, "log", { unit, tailBytes });
+    if (o.json) return console.log(JSON.stringify(r, null, program.opts().pretty ? 2 : undefined));
+    let text = String(r.log ?? "").replace(/\n$/, "");
+    if (!o.bytes && o.lines !== "all") text = text.split("\n").slice(-parseInt(o.lines, 10)).join("\n");
+    if (text) console.log(text);
+  });
+
+unitCmd
+  .command("cat")
+  .argument("<env>", "sandbox name")
+  .argument("<unit>", "unit name")
+  .description("Print the unit file → sandbox.unit cat")
+  .action(async (env: string, unit: string) => {
+    const r = await unitRpc(program.opts().url, env, "cat", { unit });
+    if (r.path) console.log("# " + r.path);
+    process.stdout.write(String(r.text ?? ""));
+  });
+
+const timerCmd = program
+  .command("timer")
+  .description("Timers of a sandbox's units (sandbox.unit timers)");
+
+timerCmd
+  .command("list")
+  .argument("<env>", "sandbox name")
+  .option("--json", "print the daemon's JSON")
+  .description("List timers like systemctl list-timers → sandbox.unit timers")
+  .action(async (env: string, o: { json?: boolean }) => {
+    const r = await unitRpc(program.opts().url, env, "timers");
+    if (o.json) return console.log(JSON.stringify(r, null, program.opts().pretty ? 2 : undefined));
+    printTimerList((r.timers as UnitJson[]) ?? []);
+  });
+
 // ---- secrets (RPC methods secret.*) — Android Keystore-backed store in the AgentDriver app ----
 const secret = program
   .command("secret")
