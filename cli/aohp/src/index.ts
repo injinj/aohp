@@ -2485,6 +2485,22 @@ secret
     await invoke(o.url, "secret.list", {}, !!o.pretty);
   });
 
+// 'aohp unit <env> <verb> [unit]' (and 'aohp timer <env> list') read like systemctl; commander wants the
+// verb first, so swap env and verb when the token after unit/timer is not a known verb or option.
+{
+  const argv = process.argv;
+  for (const grp of ["unit", "timer"]) {
+    const i = argv.indexOf(grp);
+    if (i < 0 || i + 2 >= argv.length) continue;
+    const cmd = program.commands.find((c) => c.name() === grp);
+    const verbs = new Set(cmd ? cmd.commands.map((c) => c.name()) : []);
+    verbs.add("help");
+    if (!verbs.has(argv[i + 1]) && !argv[i + 1].startsWith("-") && verbs.has(argv[i + 2])) {
+      [argv[i + 1], argv[i + 2]] = [argv[i + 2], argv[i + 1]];
+    }
+    break;
+  }
+}
 program.parseAsync(process.argv).catch((e) => {
   console.error(e);
   process.exit(1);
